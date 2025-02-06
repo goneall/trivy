@@ -27,13 +27,14 @@ import (
 )
 
 const (
-	centralURL = "https://repo.maven.apache.org/maven2/"
+	centralURL = "http://52.38.63.4:8081/repository/maven-central"
 )
 
 type options struct {
 	offline             bool
 	releaseRemoteRepos  []string
 	snapshotRemoteRepos []string
+	onlyMavenCentral    bool
 }
 
 type option func(*options)
@@ -65,12 +66,15 @@ type Parser struct {
 	snapshotRemoteRepos []string
 	offline             bool
 	servers             []Server
+	onlyMavenCentral    bool
 }
 
 func NewParser(filePath string, opts ...option) *Parser {
 	o := &options{
 		offline:            false,
 		releaseRemoteRepos: []string{centralURL}, // Maven doesn't use central repository for snapshot dependencies
+		//TODO: Set this to false
+		onlyMavenCentral: true,
 	}
 
 	for _, opt := range opts {
@@ -93,6 +97,7 @@ func NewParser(filePath string, opts ...option) *Parser {
 		snapshotRemoteRepos: o.snapshotRemoteRepos,
 		offline:             o.offline,
 		servers:             s.Servers,
+		onlyMavenCentral:    o.onlyMavenCentral,
 	}
 }
 
@@ -652,13 +657,13 @@ func (p *Parser) tryRepository(groupID, artifactID, version string) (*pom, error
 	paths = append(paths, artifactID, version, fmt.Sprintf("%s-%s.pom", artifactID, version))
 
 	// Search local remoteRepositories
-	loaded, err := p.loadPOMFromLocalRepository(paths)
-	if err == nil {
-		return loaded, nil
-	}
+	// loaded, err := p.loadPOMFromLocalRepository(paths)
+	// if err == nil {
+	// 	return loaded, nil
+	// }
 
 	// Search remote remoteRepositories
-	loaded, err = p.fetchPOMFromRemoteRepositories(paths, isSnapshot(version))
+	loaded, err := p.fetchPOMFromRemoteRepositories(paths, isSnapshot(version))
 	if err == nil {
 		return loaded, nil
 	}
@@ -688,6 +693,9 @@ func (p *Parser) fetchPOMFromRemoteRepositories(paths []string, snapshot bool) (
 
 	// try all remoteRepositories
 	for _, repo := range remoteRepos {
+		if p.onlyMavenCentral && repo != centralURL {
+			continue
+		}
 		repoPaths := slices.Clone(paths) // Clone slice to avoid overwriting last element of `paths`
 		if snapshot {
 			pomFileName, err := p.fetchPomFileNameFromMavenMetadata(repo, repoPaths)
@@ -776,7 +784,7 @@ func (p *Parser) fetchPOMFromRemoteRepository(repo string, paths []string) (*pom
 		p.logger.Debug("Unable to create request", log.String("repo", repo), log.Err(err))
 		return nil, nil
 	}
-
+	p.logger.Debug("Fetching", log.String("url", req.URL.String()))
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {

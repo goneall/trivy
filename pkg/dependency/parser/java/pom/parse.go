@@ -28,8 +28,13 @@ import (
 )
 
 const (
-	centralURL = "http://52.38.63.4:8081/repository/maven-central"
+	centralURL = "http://localhost:8081/repository/maven-central"
 )
+
+var proxyMap = map[string]string{
+	"https://repository.apache.org/content/repositories/staging/":  "http://localhost:8081/repository/apache-repo-staging/",
+	"https://repository.apache.org/content/repositories/releases/": "http://localhost:8081/repository/apache-repo-releases/",
+}
 
 type options struct {
 	offline             bool
@@ -75,7 +80,7 @@ func NewParser(filePath string, opts ...option) *Parser {
 		offline:            false,
 		releaseRemoteRepos: []string{centralURL}, // Maven doesn't use central repository for snapshot dependencies
 		//TODO: Set this to false
-		onlyMavenCentral: true,
+		onlyMavenCentral: false,
 	}
 
 	for _, opt := range opts {
@@ -692,9 +697,13 @@ func (p *Parser) fetchPOMFromRemoteRepositories(paths []string, snapshot bool) (
 	}
 
 	// try all remoteRepositories
-	for _, repo := range remoteRepos {
-		if p.onlyMavenCentral && repo != centralURL {
+	for _, repoNoProxy := range remoteRepos {
+		if p.onlyMavenCentral && repoNoProxy != centralURL {
 			continue
+		}
+		repo, proxyExists := proxyMap[repoNoProxy]
+		if !proxyExists {
+			repo = repoNoProxy
 		}
 		repoPaths := slices.Clone(paths) // Clone slice to avoid overwriting last element of `paths`
 		if snapshot {
